@@ -17,4 +17,5 @@ endif()
 define_module(sokol
 	THIRD_PARTY sokol
 	INCLUDES_MODULE_BASE
+	HEADER_ONLY
 	LINK_LIBS ${SOKOL_DEPENDENCY_LIBS})

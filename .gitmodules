@@ -1,3 +1,9 @@
 [submodule "Engine/ThirdParty/sokol/sokol"]
 	path = Engine/ThirdParty/sokol/sokol
 	url = https://github.com/floooh/sokol
+[submodule "Engine/ThirdParty/cute_headers/cute_headers"]
+	path = Engine/ThirdParty/cute_headers/cute_headers
+	url = https://github.com/RandyGaul/cute_headers
+[submodule "Engine/ThirdParty/imgui/imgui"]
+	path = Engine/ThirdParty/imgui/imgui
+	url = https://github.com/ocornut/imgui

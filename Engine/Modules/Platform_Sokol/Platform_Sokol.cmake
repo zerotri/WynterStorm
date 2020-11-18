@@ -1,4 +1,6 @@
 define_module(Platform_Sokol
 	DEPENDENCIES
 	Core
-	sokol)
+	sokol
+	cute_headers
+	imgui)
