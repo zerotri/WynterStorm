@@ -3,7 +3,8 @@
 
 #include <WynterStorm/Coroutine.h>
 
-struct ws_handle_t { uintptr_t address; };
+// struct ws_handle_t { uintptr_t address; };
+struct ws_handle_t { uint32_t id; };
 
 union ws_color_t {
     struct {
@@ -35,6 +36,7 @@ struct ws_settings_t {
 extern ws_color_t ws_color_pink;
 
 ws_handle_t ws_sprite_load( const char *file_path );
+void ws_draw_sprite( ws_handle_t sprite, int frame, float x, float y );
 
 void ws_display_set_clear_color( ws_color_t color );
 ws_settings_t* ws_system_settings();

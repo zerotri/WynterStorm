@@ -3,4 +3,5 @@ define_module(Platform_Sokol
 	Core
 	sokol
 	cute_headers
+	handmade_math
 	imgui)

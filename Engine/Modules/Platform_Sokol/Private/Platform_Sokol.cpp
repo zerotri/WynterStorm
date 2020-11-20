@@ -16,13 +16,17 @@
 #define SOKOL_GFX_IMGUI_IMPL
 #endif
 
-#include "sokol_common.h"
+#include "platform_sokol_internal.h"
+
+#define HANDMADE_MATH_IMPLEMENTATION
+#define HANDMADE_MATH_NO_SSE
+#include <HandmadeMath.h>
+#include "default.shader.h"
+
 
 static ws_settings_t system_settings;
-static sg_desc app_description;
-static simgui_desc_t imgui_description;
-static sg_imgui_t sg_imgui_description;
-static sg_pass_action default_pass_action;
+graphics_state_t graphics_state;
+sg_shader shader_default;
 
 extern void start();
 extern void end();
@@ -31,13 +35,40 @@ extern void unload();
 extern void tick(float delta_time);
 extern void render(float delta_time);
 
+std::vector<ws_vertex_t> vertex_buffer;
+std::vector<uint16_t> index_buffer;
+
 static void init(void) {
     
-    app_description.context = sapp_sgcontext();
-    sg_setup(&app_description);
+    graphics_state.app_description.context = sapp_sgcontext();
+    sg_setup(&graphics_state.app_description);
 
-    simgui_setup(&imgui_description);
-    sg_imgui_init(&sg_imgui_description);
+    sg_imgui_init(&graphics_state.sg_imgui);
+    simgui_setup(&graphics_state.simgui_description);
+
+    shader_default = sg_make_shader(default_shader_desc());
+
+    graphics_state.pipeline = sg_alloc_pipeline();
+    auto& pipeline_description = graphics_state.pipeline_description;
+
+    pipeline_description = {0};
+
+    pipeline_description.shader = shader_default;
+    pipeline_description.layout.buffers[0].stride = sizeof(ws_vertex_t);
+    pipeline_description.layout.attrs[ATTR_vs_pos].format = SG_VERTEXFORMAT_FLOAT3;
+    pipeline_description.layout.attrs[ATTR_vs_color0].format = SG_VERTEXFORMAT_FLOAT4;
+    pipeline_description.layout.attrs[ATTR_vs_texcoord0].format = SG_VERTEXFORMAT_FLOAT2;
+    pipeline_description.blend.enabled = true;
+    pipeline_description.blend.src_factor_rgb = SG_BLENDFACTOR_SRC_ALPHA;
+    pipeline_description.blend.dst_factor_rgb = SG_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+    pipeline_description.blend.color_write_mask = SG_COLORMASK_RGB;
+    pipeline_description.index_type = SG_INDEXTYPE_UINT16;
+    pipeline_description.depth_stencil.depth_compare_func = SG_COMPAREFUNC_LESS_EQUAL;
+    pipeline_description.depth_stencil.depth_write_enabled = true;
+    pipeline_description.rasterizer.cull_mode = SG_CULLMODE_NONE;
+    pipeline_description.label = "default-2d";
+
+    sg_init_pipeline(graphics_state.pipeline, &pipeline_description);
 
     ImGuiStyle* style = &ImGui::GetStyle();
 	ImVec4* colors = style->Colors;
@@ -103,38 +134,51 @@ static void init(void) {
 	style->TabBorderSize = 1.0f;
 	style->TabRounding = 0.0f;
 	style->WindowRounding = 4.0f;
+
+    load();
 }
 
 static void frame(void) {
-    simgui_new_frame(sapp_width(), sapp_height(), 1.0f/60.0f);
+    sfetch_dowork();
+
 
     tick(0.0f);
+    
+    simgui_new_frame(sapp_width(), sapp_height(), 1.0f/60.0f);
+
+
+    ws_sprite_batcher_reset();
+    sg_begin_default_pass(&graphics_state.pass_action, sapp_width(), sapp_height());
 
     render(0.0f);
 
-    sg_imgui_draw(&sg_imgui_description);
+    sg_push_debug_group("sprite-batcher");
+    ws_sprite_batcher_finish();
+    sg_pop_debug_group();
 
+    sg_imgui_draw(&graphics_state.sg_imgui);
+
+    auto &sg_imgui = graphics_state.sg_imgui;
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("Debugging")) {
-            ImGui::MenuItem("Buffers", 0, &sg_imgui_description.buffers.open);
-            ImGui::MenuItem("Images", 0, &sg_imgui_description.images.open);
-            ImGui::MenuItem("Shaders", 0, &sg_imgui_description.shaders.open);
-            ImGui::MenuItem("Pipelines", 0, &sg_imgui_description.pipelines.open);
-            ImGui::MenuItem("Passes", 0, &sg_imgui_description.passes.open);
-            ImGui::MenuItem("Calls", 0, &sg_imgui_description.capture.open);
+            ImGui::MenuItem("Buffers", 0, &sg_imgui.buffers.open);
+            ImGui::MenuItem("Images", 0, &sg_imgui.images.open);
+            ImGui::MenuItem("Shaders", 0, &sg_imgui.shaders.open);
+            ImGui::MenuItem("Pipelines", 0, &sg_imgui.pipelines.open);
+            ImGui::MenuItem("Passes", 0, &sg_imgui.passes.open);
+            ImGui::MenuItem("Calls", 0, &sg_imgui.capture.open);
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();
     }
 
-    sg_begin_default_pass(&default_pass_action, sapp_width(), sapp_height());
     simgui_render();
     sg_end_pass();
     sg_commit();
 }
 
 static void cleanup(void) {
-    sg_imgui_discard(&sg_imgui_description);
+    sg_imgui_discard(&graphics_state.sg_imgui);
     simgui_shutdown();
     sg_shutdown();
 }
@@ -150,12 +194,15 @@ sapp_desc sokol_main(int argc, char* argv[]) {
     system_settings.screen.vsync = true;
 
     stm_setup();
+    sfetch_desc_t fetch_desc{ 0 };
+    sfetch_setup(&fetch_desc);
 
-    default_pass_action.colors[0].action = SG_ACTION_CLEAR;
-    default_pass_action.colors[0].val[0] = 1.0f;
-    default_pass_action.colors[0].val[1] = 1.0f;
-    default_pass_action.colors[0].val[2] = 1.0f;
-    default_pass_action.colors[0].val[3] = 1.0f;
+    auto &pass_action = graphics_state.pass_action;
+    pass_action.colors[0].action = SG_ACTION_CLEAR;
+    pass_action.colors[0].val[0] = 1.0f;
+    pass_action.colors[0].val[1] = 1.0f;
+    pass_action.colors[0].val[2] = 1.0f;
+    pass_action.colors[0].val[3] = 1.0f;
 
     start();
 
@@ -183,9 +230,10 @@ float ws_time_current()
 
 void ws_display_set_clear_color( ws_color_t color )
 {
-    default_pass_action.colors[0].action = SG_ACTION_CLEAR;
-    default_pass_action.colors[0].val[0] = color.r;
-    default_pass_action.colors[0].val[1] = color.g;
-    default_pass_action.colors[0].val[2] = color.b;
-    default_pass_action.colors[0].val[3] = color.a;
+    auto &pass_action = graphics_state.pass_action;
+    pass_action.colors[0].action = SG_ACTION_CLEAR;
+    pass_action.colors[0].val[0] = color.r;
+    pass_action.colors[0].val[1] = color.g;
+    pass_action.colors[0].val[2] = color.b;
+    pass_action.colors[0].val[3] = color.a;
 }

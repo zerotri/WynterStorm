@@ -7,3 +7,6 @@
 [submodule "Engine/ThirdParty/imgui/imgui"]
 	path = Engine/ThirdParty/imgui/imgui
 	url = https://github.com/ocornut/imgui
+[submodule "Engine/ThirdParty/handmade_math/Handmade-Math"]
+	path = Engine/ThirdParty/handmade_math/Handmade-Math
+	url = https://github.com/HandmadeMath/Handmade-Math
