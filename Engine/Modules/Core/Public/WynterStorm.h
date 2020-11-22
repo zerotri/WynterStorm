@@ -40,4 +40,4 @@ void ws_draw_sprite( ws_handle_t sprite, int frame, float x, float y );
 
 void ws_display_set_clear_color( ws_color_t color );
 ws_settings_t* ws_system_settings();
-float ws_time_current();
+double ws_time_current();

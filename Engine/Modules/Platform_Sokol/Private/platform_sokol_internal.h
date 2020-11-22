@@ -4,10 +4,15 @@ struct graphics_state_t {
     sg_desc app_description;
     simgui_desc_t simgui_description;
     sg_imgui_t sg_imgui;
-    sg_pipeline_desc pipeline_description;
-    sg_pipeline pipeline;
+    sg_pipeline_desc editor_pipeline_description;
+    sg_pipeline editor_pipeline;
+    sg_pipeline_desc game_pipeline_description;
+    sg_pipeline game_pipeline;
     sg_bindings bind;
-    sg_pass_action pass_action;
+    sg_pass game_pass;
+    sg_pass_desc game_pass_description;
+    sg_pass_action game_pass_action;
+    sg_pass_action default_pass;
 };
 
 struct ws_vertex_t {

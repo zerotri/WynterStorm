@@ -191,8 +191,10 @@ void ws_sprite_batcher_reset()
 
 void ws_sprite_batcher_finish()
 {
+    #if RENDER_SPRITE_BATCHER
     ImGui::Begin("Sprite Batcher");
         ImGui::Text("Sprites: %lu", sprites.size());
+    #endif
 
     vs_params_t vs_params;
     
@@ -204,6 +206,7 @@ void ws_sprite_batcher_finish()
     {
         auto &sprite = sprite_iter.second;
         if(sprite.vertices.size() == 0) continue;
+        #if RENDER_SPRITE_BATCHER
         if (ImGui::CollapsingHeader(sprite.label))
         {
             ImGui::Text("Index: %u", sprite_iter.first);
@@ -217,6 +220,7 @@ void ws_sprite_batcher_finish()
             }
             ImGui::Text("  indices: %lu", sprite.indices.size());
         }
+        #endif
 
         int vtx_offset = sg_append_buffer(sprite.vertex_buffer, &sprite.vertices[0], sizeof(ws_vertex_t) * sprite.vertices.size());
         int idx_offset = sg_append_buffer(sprite.index_buffer, &sprite.indices[0], sizeof(uint16_t) * sprite.indices.size());
@@ -228,11 +232,13 @@ void ws_sprite_batcher_finish()
         graphics_state.bind.fs_images[SLOT_tex] = sprite.id;
 
         sg_apply_viewport(0, 0, sapp_width(), sapp_height(), true);
-        sg_apply_pipeline(graphics_state.pipeline);
+        sg_apply_pipeline(graphics_state.game_pipeline);
         sg_apply_bindings(&graphics_state.bind);
         sg_apply_uniforms(SG_SHADERSTAGE_VS, SLOT_vs_params, &vs_params, sizeof(vs_params));
 
         sg_draw(0, sprite.indices.size(), 1);
     }
+    #if RENDER_SPRITE_BATCHER
     ImGui::End();
+    #endif
 }
