@@ -1,5 +1,7 @@
 #include <WynterStorm.h>
+#include <TaggedHeap.h>
 
+#include <inttypes.h>
 #include <string>
 #include <map>
 #include <vector>
@@ -45,6 +47,16 @@ static double last_render_time = 0.0;
 
 static void init(void) {
     
+    // init memory for tagged heap allocator
+    if(ws_tagged_heap_init() < 0)
+    {
+        // todo(Wynter): handle case where we can't init allocator memory
+    }
+
+    printf("Initialized tagged heap allocator\n");
+    printf("  address: %" PRIxPTR "\n", (uintptr_t) ws_tagged_heap_get_base());
+    printf("  block size: %" PRIxPTR "\n", (uintptr_t) ws_tagged_heap_get_block_size());
+
     graphics_state.app_description.context = sapp_sgcontext();
     sg_setup(&graphics_state.app_description);
 
