@@ -1,21 +1,23 @@
-if(APPLE)
-	set(APPLE_FRAMEWORKS
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+	set(SOKOL_DEPENDENCY_LIBS
 		Cocoa
 		Metal
 		Metalkit
 		QuartzCore)
-
-	set(SOKOL_DEPENDENCY_LIBS)
-	
-	foreach(FW ${APPLE_FRAMEWORKS})
-		unset(LIB CACHE)
-		find_library(LIB ${FW})
-		list(APPEND SOKOL_DEPENDENCY_LIBS "${LIB}")
-	endforeach()
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+	set(SOKOL_DEPENDENCY_LIBS
+		X11
+		Xi
+		Xcursor
+		GL
+		m
+		dl
+		asound
+		pthread)
 endif()
 
 define_module(sokol
 	THIRD_PARTY sokol
 	INCLUDES_MODULE_BASE
 	HEADER_ONLY
-	LINK_LIBS ${SOKOL_DEPENDENCY_LIBS})
+	SYSTEM_LIBS ${SOKOL_DEPENDENCY_LIBS})

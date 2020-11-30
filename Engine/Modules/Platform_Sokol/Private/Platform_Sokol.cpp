@@ -12,6 +12,10 @@
 #define SOKOL_IMPL
 #define SOKOL_IMGUI_IMPL
 #define SOKOL_GFX_IMGUI_IMPL
+#elif defined (__linux__)
+#define SOKOL_IMPL
+#define SOKOL_IMGUI_IMPL
+#define SOKOL_GFX_IMGUI_IMPL
 #elif defined(__EMSCRIPTEN__)
 #define SOKOL_IMPL
 #define SOKOL_IMGUI_IMPL
