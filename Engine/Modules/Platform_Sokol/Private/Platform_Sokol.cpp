@@ -328,16 +328,27 @@ static void frame(void) {
     int game_view_offset_x = sapp_width()/2 - 512/2;
     int game_view_offset_y = sapp_height()/2 - game_view_height/2;
     ImGui::SetNextWindowPos(ImVec2(game_view_offset_x, game_view_offset_y), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(game_view_width, game_view_height));
+    ImGui::SetNextWindowSize(ImVec2(game_view_width, game_view_height), ImGuiCond_FirstUseEver);
     ImGui::Begin("Game View", nullptr, ImGuiWindowFlags_NoScrollbar);
-        ImGui::Image((ImTextureID)(intptr_t)color_img.id, ImVec2(game_view_width, game_view_height), ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.25f));
-        // auto draw_list = ImGui::GetWindowDrawList();
-        // draw_list->AddCallback([](const ImDrawList* dl, const ImDrawCmd* cmd) {
-        //     const int cx = (int) cmd->ClipRect.x;
-        //     const int cy = (int) cmd->ClipRect.y;
-        //     const int cw = (int) (cmd->ClipRect.z - cmd->ClipRect.x);
-        //     const int ch = (int) (cmd->ClipRect.w - cmd->ClipRect.y);
-        // }, nullptr);
+
+        // calculate window center and image size (fixed aspect ratio)
+        ImVec2 currentCursorPos = ImGui::GetCursorPos();
+        ImVec2 contentRegion = ImGui::GetContentRegionAvail();
+        ImVec2 imageRegion = ImVec2(0,0);
+        float gameAspectRatio = (float)game_view_width / (float)game_view_height;
+        float windowAspectRatio = contentRegion.x / contentRegion.y;
+        if(windowAspectRatio > gameAspectRatio)
+        {
+            imageRegion = ImVec2(game_view_width * (contentRegion.y/game_view_height), contentRegion.y);
+        }
+        else
+        {
+            imageRegion = ImVec2(contentRegion.x, game_view_height * (contentRegion.x/game_view_width));
+        }
+        ImVec2 cursorPos(currentCursorPos.x + (contentRegion.x - imageRegion.x) * 0.5f, currentCursorPos.y + (contentRegion.y - imageRegion.y) * 0.5f);
+        
+        ImGui::SetCursorPos(cursorPos);
+        ImGui::Image((ImTextureID)(intptr_t)color_img.id, imageRegion, ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.25f));
     ImGui::End();
 
     sg_begin_default_pass(&graphics_state.default_pass, sapp_width(), sapp_height());
