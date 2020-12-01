@@ -75,8 +75,8 @@ static void init(void) {
     img_desc.width = 512;
     img_desc.height = 512;
     img_desc.pixel_format = SG_PIXELFORMAT_RGBA8;
-    img_desc.min_filter = SG_FILTER_LINEAR;
-    img_desc.mag_filter = SG_FILTER_LINEAR;
+    img_desc.min_filter = SG_FILTER_NEAREST;
+    img_desc.mag_filter = SG_FILTER_NEAREST;
     img_desc.wrap_u = SG_WRAP_REPEAT;
     img_desc.wrap_v = SG_WRAP_REPEAT;
     img_desc.sample_count = 0;

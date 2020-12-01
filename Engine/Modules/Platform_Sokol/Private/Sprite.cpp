@@ -98,8 +98,8 @@ ws_handle_t ws_sprite_load( const char *file_path )
             description.width = w;
             description.height = h;
             description.pixel_format = SG_PIXELFORMAT_RGBA8;
-            description.min_filter = SG_FILTER_LINEAR;
-            description.mag_filter = SG_FILTER_LINEAR;
+            description.min_filter = SG_FILTER_NEAREST;
+            description.mag_filter = SG_FILTER_NEAREST;
             description.content.subimage[0][0] = subimage;
             description.label = sprite.label;
 
