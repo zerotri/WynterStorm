@@ -2,6 +2,7 @@
 #include <map>
 #include <iostream>
 #include <vector>
+#include <TaggedHeap.h>
 
 // ws_handle_t null_handle()
 // {
@@ -24,6 +25,19 @@
 //     return reinterpret_cast<T*>(handle.address); // + ws_memory_base;
 // }
 
+  constexpr uint32_t val_32_const = 0x811c9dc5;
+  constexpr uint32_t prime_32_const = 0x1000193;
+  constexpr uint64_t val_64_const = 0xcbf29ce484222325;
+  constexpr uint64_t prime_64_const = 0x100000001b3;
+
+  inline constexpr uint32_t hash_32_fnv1a_const(const char* const str, const uint32_t value = val_32_const) noexcept {
+      return (str[0] == '\0') ? value : hash_32_fnv1a_const(&str[1], (value ^ uint32_t(str[0])) * prime_32_const);
+  }
+
+  inline constexpr uint64_t hash_64_fnv1a_const(const char* const str, const uint64_t value = val_64_const) noexcept {
+      return (str[0] == '\0') ? value : hash_64_fnv1a_const(&str[1], (value ^ uint64_t(str[0])) * prime_64_const);
+  }
+
 // sokol
 #include "platform_sokol_internal.h"
 #include "HandmadeMath.h"
@@ -34,18 +48,24 @@
 #define CUTE_ASEPRITE_IMPLEMENTATION
 #include <cute_aseprite.h>
 
+struct ws_internal_sprite_rect_t {
+    float x, y, w, h;
+};
+
 struct ws_internal_sprite_t {
     uint16_t map_index;
     ase_t* ase;
     sg_image id;
-    sg_image_desc description;
+    // sg_image_desc* descriptions;
 	int width, height;
+    int atlas_width, atlas_height;
 	int type;
 	int flags;
     // temporary until atlasing is implemented
-    bool allocatedForFrame;
+    bool allocatedForSprite;
     std::vector<ws_vertex_t> vertices;
     std::vector<uint16_t> indices;
+    std::vector<ws_internal_sprite_rect_t> frames;
     sg_buffer vertex_buffer;
     sg_buffer index_buffer;
     int vertexCount;
@@ -55,6 +75,45 @@ struct ws_internal_sprite_t {
 };
 
 std::map<int16_t, struct ws_internal_sprite_t> sprites;
+
+// calculating size needed to store full sprite atlas
+// int npot(int n) {
+//     int i = 0;
+//     for (--n; n > 0; n >>= 1) {
+//         i++;
+//     }
+//     return 1 << i;
+// }
+//
+
+//
+// sqrt take number of frames, then ceil result
+// take outcome and multiply by image w and h to get w2 and h2
+// use npot(w2) and npot(h2) to get resulting spritesheet size
+// 
+// image: 12 x 62 = 744px
+// images: 19 = 14136px
+// ceil(sqrt(19)) == 5
+
+// 12 * 5 = npot(60) = 64
+// 63 * 5 = npot(315) = 512
+// 18900/32768px
+
+void __hacky_copy_buffer_rect(char* src, int src_x, int src_y, int src_stride,
+                        char* dest, int dest_x, int dest_y, int dest_stride,
+                        int w, int h, int bpp)
+{
+    char* src_ptr = (char*)(uintptr_t)src + (src_y * src_stride) + (src_x * bpp);
+    char* dest_ptr = (char*)(uintptr_t)dest + (dest_y * dest_stride) + (dest_x * bpp);
+
+    for(int y = 0; y < h; y++)
+    {
+        memcpy(dest_ptr, src_ptr, w * bpp);
+        src_ptr += src_stride;
+        dest_ptr += dest_stride;
+    }
+}
+
 
 ws_handle_t ws_sprite_load( const char *file_path )
 {
@@ -84,19 +143,61 @@ ws_handle_t ws_sprite_load( const char *file_path )
             sprite.ase = cute_aseprite_load_from_memory(response->buffer_ptr, response->buffer_size, nullptr);
             int w = sprite.ase->w;
             int h = sprite.ase->h;
+            int bpp = 4;
             sprite.width = w;
             sprite.height = h;
 
+            // calculate atlas size
+            int num_frames = sprite.ase->frame_count;
+            int atlas_multiplier = (int)ceil(sqrt((float)num_frames));
+            int atlas_width = w * atlas_multiplier;
+            int atlas_height = h * atlas_multiplier;
+            int atlas_buffer_size = atlas_width * atlas_height * bpp;
+            int atlas_heap_blocks = (int)ceil((float)atlas_buffer_size / (float)ws_tagged_heap_get_block_size());
+
+            char* atlas_buffer = (char*)ws_tagged_heap_alloc_n_blocks(hash_32_fnv1a_const("ws_sprite_load"), atlas_heap_blocks);
+            if(atlas_buffer == nullptr)
+            {
+                // todo(Wynter): Handle failure to alloc blocks
+            }
+
+            // messy spritesheet generation code
+            // todo(Wynter): clean this up
+            int i = 0;
+            int x = 0;
+            int y = 0;
+            while( i < num_frames)
+            {
+                char *pixel_data = (char*)sprite.ase->frames[i].pixels;
+                __hacky_copy_buffer_rect(pixel_data, 0, 0, w * bpp, atlas_buffer, x * w, y * h, atlas_width * bpp, w, h, bpp);
+                
+
+                ws_internal_sprite_rect_t frame_rect = {((float)x) * w, ((float)y) * h, (float)w, (float)h};
+                sprite.frames.push_back(frame_rect);
+
+                i++;
+                x++;
+
+                if(i % atlas_multiplier == 0)
+                {
+                    y++;
+                    x = 0;
+                }
+            }
+
+            sprite.atlas_width = atlas_width;
+            sprite.atlas_height = atlas_height;
+
             sg_subimage_content subimage;
-            subimage.ptr = sprite.ase->frames[0].pixels;
-            subimage.size = w * h * 4;
+            subimage.ptr = atlas_buffer;
+            subimage.size = atlas_width * atlas_height * bpp;
             
             // set description to zero or sokol will complain about it not being initialized
             // NOTE(Wynter): will this work in MSVC???
-            auto &description = sprite.description;
-            description = sg_image_desc {0};
-            description.width = w;
-            description.height = h;
+            // auto &description = sprite.description;
+            auto description = sg_image_desc {0};
+            description.width = atlas_width;
+            description.height = atlas_height;
             description.pixel_format = SG_PIXELFORMAT_RGBA8;
             description.min_filter = SG_FILTER_NEAREST;
             description.mag_filter = SG_FILTER_NEAREST;
@@ -131,8 +232,20 @@ ws_handle_t ws_sprite_load( const char *file_path )
             std::cout << "\t Index\t" << sprite.map_index << std::endl;
             std::cout << "\t Id\t" << sprite.id.id << std::endl;
             std::cout << "\t Layers\t" << sprite.ase->layer_count << std::endl;
+            std::cout << "\t Frames\t" << sprite.frames.size() << std::endl;
             std::cout << "\t Width\t" << w << std::endl;
             std::cout << "\t Height\t" << h << std::endl;
+            std::cout << "\t Atlas Width\t" << atlas_width << std::endl;
+            std::cout << "\t Atlas Height\t" << atlas_height << std::endl;
+            std::cout << "\t Frames" << std::endl;
+            for( auto &frame : sprite.frames)
+            {
+                std::cout   << "\t   {"
+                            << frame.x << ", "
+                            << frame.y << ", "
+                            << frame.w << ", "
+                            << frame.h << "}" << std::endl;
+            }
         }
         
         if (response->finished) {
@@ -158,17 +271,27 @@ void ws_draw_sprite( ws_handle_t sprite, int frame, float x, float y )
     {
         auto &sprite = sprite_iter->second;
         if(!sprite.isLoaded) return;
+        if(frame > sprite.frames.size()) return;
 
-        auto xe = x + (float)sprite.width;
-        auto ye = y + (float)sprite.height;
+        auto &frame_info = sprite.frames[frame];
+
+        auto xe = x + frame_info.w;
+        auto ye = y + frame_info.h;
+
+        auto pixel_size_x = 1.0f / sprite.atlas_width;
+        auto pixel_size_y = 1.0f / sprite.atlas_height;
+        auto u1 = pixel_size_x * frame_info.x;
+        auto u2 = pixel_size_x * (frame_info.x + frame_info.w);
+        auto v1 = pixel_size_y * frame_info.y;
+        auto v2 = pixel_size_y * (frame_info.y + frame_info.h);
 
         auto &vertices = sprite.vertices;
         auto start_index = vertices.size();
         float z = -5.0f;
-        vertices.push_back(ws_vertex_t{  x,  y, z, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f,  0.0f});
-        vertices.push_back(ws_vertex_t{ xe,  y, z, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,  0.0f});
-        vertices.push_back(ws_vertex_t{ xe, ye, z, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,  1.0f});
-        vertices.push_back(ws_vertex_t{  x, ye, z, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f,  1.0f});
+        vertices.push_back(ws_vertex_t{  x,  y, z, 1.0f, 1.0f, 1.0f, 1.0f, u1,  v1});
+        vertices.push_back(ws_vertex_t{ xe,  y, z, 1.0f, 1.0f, 1.0f, 1.0f, u2,  v1});
+        vertices.push_back(ws_vertex_t{ xe, ye, z, 1.0f, 1.0f, 1.0f, 1.0f, u2,  v2});
+        vertices.push_back(ws_vertex_t{  x, ye, z, 1.0f, 1.0f, 1.0f, 1.0f, u1,  v2});
 
         auto &indices = sprite.indices;
         indices.push_back(start_index);
@@ -191,6 +314,7 @@ void ws_sprite_batcher_reset()
 
 void ws_sprite_batcher_finish()
 {
+    #define RENDER_SPRITE_BATCHER 1
     #if RENDER_SPRITE_BATCHER
     ImGui::Begin("Sprite Batcher");
         ImGui::Text("Sprites: %lu", sprites.size());
@@ -211,7 +335,7 @@ void ws_sprite_batcher_finish()
         {
             ImGui::Text("Index: %u", sprite_iter.first);
 
-            ImGui::Text("Label: %s", sprite.description.label);
+            ImGui::Text("Label: %s", sprite.label);
 
             ImGui::Text("  vertices: %lu", sprite.vertices.size());
             for(int i = 0; i < sprite.vertices.size(); i++) {

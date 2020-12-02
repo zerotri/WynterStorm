@@ -15,12 +15,12 @@
 #define PLATFORM_HAS_MMAP 1
 #define PLATFORM_HAS_VIRTUALALLOC 0
 #elif defined(__EMSCRIPTEN__)
-#define PLATFORM_HAS_MMAP 0
+#define PLATFORM_HAS_MMAP 1
 #define PLATFORM_HAS_VIRTUALALLOC 0
 #endif
 
 constexpr uintptr_t tagged_heap_fixed_addr          = 0x200000000;
-constexpr size_t tagged_heap_size                   = 0x40000000;   // 1GB
+constexpr size_t tagged_heap_size                   = 0x00400000;   // 16MB
 constexpr size_t tagged_heap_block_size             = 0x1000;       // 4KB
 constexpr size_t tagged_heap_block_count            = tagged_heap_size / tagged_heap_block_size;
 constexpr ws_tag_t tagged_heap_internal_tag         = 0xFFFFFFFFFFFFFFFF;
