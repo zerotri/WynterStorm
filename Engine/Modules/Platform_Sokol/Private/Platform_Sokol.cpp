@@ -64,8 +64,8 @@ uint64_t npot(uint64_t n)
 
 static void initialize_game_pass()
 {
-    graphics_state.game_render_target = sg_alloc_image();
-    graphics_state.depth_buffer = sg_alloc_image();
+    graphics_state.render_buffers[ws_render_buffers::frame] = sg_alloc_image();
+    graphics_state.render_buffers[ws_render_buffers::depth] = sg_alloc_image();
 
     sg_image_desc img_desc = {0};
     img_desc.render_target = true;
@@ -79,16 +79,16 @@ static void initialize_game_pass()
     img_desc.sample_count = 0;
     img_desc.label = "color-image";
     
-    sg_init_image(graphics_state.game_render_target, &img_desc);
+    sg_init_image(graphics_state.render_buffers[ws_render_buffers::frame], &img_desc);
 
     img_desc.pixel_format = SG_PIXELFORMAT_DEPTH;
     img_desc.label = "depth-image";
 
-    sg_init_image(graphics_state.depth_buffer, &img_desc);
+    sg_init_image(graphics_state.render_buffers[ws_render_buffers::depth], &img_desc);
 
     sg_pass_desc pass_description = {0};
-    pass_description.color_attachments[0].image = graphics_state.game_render_target;
-    pass_description.depth_stencil_attachment.image = graphics_state.depth_buffer;
+    pass_description.color_attachments[0].image = graphics_state.render_buffers[ws_render_buffers::frame];
+    pass_description.depth_stencil_attachment.image = graphics_state.render_buffers[ws_render_buffers::depth];
     pass_description.label = "game-pass";
 
     graphics_state.game_pass = sg_make_pass(&pass_description);
@@ -96,13 +96,13 @@ static void initialize_game_pass()
 
 static void initialize_pipelines()
 {
-    graphics_state.game_pipeline = sg_alloc_pipeline();
-    graphics_state.editor_pipeline = sg_alloc_pipeline();
+    graphics_state.pipelines[ws_pipelines::game] = sg_alloc_pipeline();
+    graphics_state.pipelines[ws_pipelines::editor] = sg_alloc_pipeline();
 
     sg_pipeline_desc pipeline_desc = {0};
 
     pipeline_desc = {0};
-    pipeline_desc.shader = graphics_state.shader_offscreen;
+    pipeline_desc.shader = graphics_state.shaders[ws_shaders::offscreen];
     pipeline_desc.layout.buffers[0].stride = sizeof(ws_vertex_t);
     pipeline_desc.layout.attrs[ATTR_vs_pos].format = SG_VERTEXFORMAT_FLOAT3;
     pipeline_desc.layout.attrs[ATTR_vs_color0].format = SG_VERTEXFORMAT_FLOAT4;
@@ -119,12 +119,12 @@ static void initialize_pipelines()
     pipeline_desc.rasterizer.cull_mode = SG_CULLMODE_NONE;
     pipeline_desc.label = "game";
 
-    sg_init_pipeline(graphics_state.game_pipeline, &pipeline_desc);
+    sg_init_pipeline(graphics_state.pipelines[ws_pipelines::game], &pipeline_desc);
 
-    pipeline_desc.shader = graphics_state.shader_default;
+    pipeline_desc.shader = graphics_state.shaders[ws_shaders::standard];
     pipeline_desc.label = "editor";
 
-    sg_init_pipeline(graphics_state.editor_pipeline, &pipeline_desc);
+    sg_init_pipeline(graphics_state.pipelines[ws_pipelines::editor], &pipeline_desc);
 }
 
 static void setup_imgui_style()
@@ -225,11 +225,11 @@ static void init(void) {
     simgui_setup(&simgui_description);
     sg_imgui_init(&graphics_state.sg_imgui);
 
-    graphics_state.shader_default = sg_make_shader(default_shader_desc());
-    graphics_state.shader_offscreen = sg_make_shader(default_shader_desc());
+    graphics_state.shaders[ws_shaders::standard] = sg_make_shader(default_shader_desc());
+    graphics_state.shaders[ws_shaders::offscreen] = sg_make_shader(default_shader_desc());
 
-    graphics_state.game_view_width = system_settings.screen.width; // 512;
-    graphics_state.game_view_height = system_settings.screen.height; //384;
+    graphics_state.game_view_width = system_settings.screen.width;
+    graphics_state.game_view_height = system_settings.screen.height;
     graphics_state.render_target_width = npot(graphics_state.game_view_width);
     graphics_state.render_target_height = npot(graphics_state.game_view_height);
     graphics_state.render_target_valid = true;
@@ -268,8 +268,8 @@ static void frame(void) {
         printf("Resizing view to %dx%d\n", w, h);
         printf("Resizing framebuffer to %dx%d\n", graphics_state.render_target_width, graphics_state.render_target_height);
 
-        sg_image old_render_target = graphics_state.game_render_target;
-        sg_image old_depth_buffer = graphics_state.depth_buffer;
+        sg_image old_render_target = graphics_state.render_buffers[ws_render_buffers::frame];
+        sg_image old_depth_buffer = graphics_state.render_buffers[ws_render_buffers::depth];
         sg_pass old_pass = graphics_state.game_pass;
 
         initialize_game_pass();
@@ -301,7 +301,7 @@ static void frame(void) {
     ws_sprite_batcher_reset();
 
     sg_begin_pass(graphics_state.game_pass, &graphics_state.game_pass_action);
-    sg_apply_pipeline(graphics_state.game_pipeline);
+    sg_apply_pipeline(graphics_state.pipelines[ws_pipelines::game]);
 
     render(delta_render_time);
 
@@ -414,7 +414,7 @@ static void frame(void) {
             (float)graphics_state.game_view_height / (float)graphics_state.render_target_height
         };
 
-        ImGui::Image((ImTextureID)(intptr_t)graphics_state.game_render_target.id, imageRegion, ImVec2(0.0f, 1.0f), ImVec2(view_dims.x, 1.0f - view_dims.y));
+        ImGui::Image((ImTextureID)(intptr_t)graphics_state.render_buffers[ws_render_buffers::frame].id, imageRegion, ImVec2(0.0f, 1.0f), ImVec2(view_dims.x, 1.0f - view_dims.y));
 
         graphics_state.game_view_width = contentRegion.x;
         graphics_state.game_view_height = contentRegion.y;

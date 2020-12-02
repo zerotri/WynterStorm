@@ -356,7 +356,7 @@ void ws_sprite_batcher_finish()
         graphics_state.bind.fs_images[SLOT_tex] = sprite.id;
 
         sg_apply_viewport(0, 0, sapp_width(), sapp_height(), true);
-        sg_apply_pipeline(graphics_state.game_pipeline);
+        sg_apply_pipeline(graphics_state.pipelines[ws_pipelines::game]);
         sg_apply_bindings(&graphics_state.bind);
         sg_apply_uniforms(SG_SHADERSTAGE_VS, SLOT_vs_params, &vs_params, sizeof(vs_params));
 
