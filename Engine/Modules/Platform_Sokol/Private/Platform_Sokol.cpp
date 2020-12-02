@@ -448,7 +448,7 @@ sapp_desc sokol_main(int argc, char* argv[]) {
 
     system_settings.screen.width = 320;
     system_settings.screen.height = 240;
-    system_settings.screen.hidpi = false;
+    system_settings.screen.hidpi = true;
     system_settings.screen.vsync = true;
 
     stm_setup();
