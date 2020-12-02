@@ -97,6 +97,9 @@ static void init(void) {
     graphics_state.app_description.context = sapp_sgcontext();
     sg_setup(&graphics_state.app_description);
 
+    graphics_state.simgui_description = {0};
+    graphics_state.simgui_description.dpi_scale = sapp_dpi_scale();
+    
     simgui_setup(&graphics_state.simgui_description);
     sg_imgui_init(&graphics_state.sg_imgui);
 
