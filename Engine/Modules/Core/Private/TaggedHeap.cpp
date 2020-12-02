@@ -21,15 +21,17 @@
 
 constexpr uintptr_t tagged_heap_fixed_addr          = 0x200000000;
 constexpr size_t tagged_heap_size                   = 0x40000000;   // 1GB
-constexpr size_t tagged_heap_block_size             =   0x100000;   // 1MB
+constexpr size_t tagged_heap_block_size             = 0x1000;       // 4KB
 constexpr size_t tagged_heap_block_count            = tagged_heap_size / tagged_heap_block_size;
-constexpr size_t tagged_heap_reserved_block_count   = 1;
 constexpr ws_tag_t tagged_heap_internal_tag         = 0xFFFFFFFFFFFFFFFF;
 
 struct ws_tagged_heap_t {
     ws_tag_t block_tags[tagged_heap_block_count];
 };
+
 static ws_tagged_heap_t* ws_tagged_heap_ptr = nullptr;
+
+constexpr size_t tagged_heap_reserved_block_count   = (sizeof(ws_tagged_heap_t) + (tagged_heap_block_size - 1)) / tagged_heap_block_size;
 
 int ws_tagged_heap_init()
 {
@@ -131,15 +133,12 @@ void ws_tagged_heap_free_block(void* block_address)
 {
     // todo(Wynter): clean up these commented out code segments once this is verified to work correctly
 
-    // void* start = ws_tagged_heap_ptr + tagged_heap_block_size; // add one block so we don't allow deleting initial block
-    // void* end = ws_tagged_heap_ptr + tagged_heap_size;
-
-    size_t block_number = ((uintptr_t)block_address - (uintptr_t)ws_tagged_heap_ptr) / tagged_heap_block_size + 1;
+    size_t block_number = ((uintptr_t)block_address - (uintptr_t)ws_tagged_heap_ptr) / tagged_heap_block_size + tagged_heap_reserved_block_count;
 
     // if(block_address >= start && block_address <= end )
     
-    // ignore first block as it belongs to the block allocator
-    if(block_number > 0 && block_number < tagged_heap_block_count )
+    // ignore reserved blocks
+    if(block_number > tagged_heap_reserved_block_count && block_number < tagged_heap_block_count )
     {
         ws_tagged_heap_ptr->block_tags[block_number] = 0;
     }
@@ -147,8 +146,8 @@ void ws_tagged_heap_free_block(void* block_address)
 
 void ws_tagged_heap_free_tag(ws_tag_t tag)
 {
-    // always start from 1 because the 0 block belongs to the allocator
-    for(size_t i = 1; i < tagged_heap_block_count; i++)
+    // always start after reserved blocks
+    for(size_t i = tagged_heap_reserved_block_count; i < tagged_heap_block_count; i++)
     {
         if(ws_tagged_heap_ptr->block_tags[i] == tag)
         {
