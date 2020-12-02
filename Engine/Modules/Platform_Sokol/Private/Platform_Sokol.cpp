@@ -31,10 +31,7 @@
 
 
 static ws_settings_t system_settings;
-graphics_state_t graphics_state;
-sg_shader shader_default;
-sg_shader shader_offscreen;
-sg_image color_img;
+graphics_state_t graphics_state = {0};
 
 extern void start();
 extern void end();
@@ -49,8 +46,27 @@ std::vector<uint16_t> index_buffer;
 static double last_tick_time = 0.0;
 static double last_render_time = 0.0;
 
+bool is_pot(uint64_t n)
+{
+    return (!(n & (n - 1)));
+}
+
+uint64_t npot(uint64_t n)
+{
+    n |= n >> 1;
+    n |= n >> 2;
+	n |= n >> 4;
+	n |= n >> 8;
+	n |= n >> 16;
+	n |= n >> 32;
+  return n + 1;
+}
+
 static void initialize_game_pass()
 {
+    graphics_state.game_render_target = sg_alloc_image();
+    graphics_state.depth_buffer = sg_alloc_image();
+
     sg_image_desc img_desc = {0};
     img_desc.render_target = true;
     img_desc.width = graphics_state.render_target_width;
@@ -63,102 +79,56 @@ static void initialize_game_pass()
     img_desc.sample_count = 0;
     img_desc.label = "color-image";
     
-    color_img = sg_make_image(&img_desc);
+    sg_init_image(graphics_state.game_render_target, &img_desc);
 
     img_desc.pixel_format = SG_PIXELFORMAT_DEPTH;
     img_desc.label = "depth-image";
 
-    sg_image depth_img = sg_make_image(&img_desc);
+    sg_init_image(graphics_state.depth_buffer, &img_desc);
 
-    auto &game_pass_description = graphics_state.game_pass_description;
-    game_pass_description = {0};
-    game_pass_description.color_attachments[0].image = color_img;
-    game_pass_description.depth_stencil_attachment.image = depth_img;
-    game_pass_description.label = "game-pass";
+    sg_pass_desc pass_description = {0};
+    pass_description.color_attachments[0].image = graphics_state.game_render_target;
+    pass_description.depth_stencil_attachment.image = graphics_state.depth_buffer;
+    pass_description.label = "game-pass";
 
-    graphics_state.game_pass = sg_make_pass(&game_pass_description);
+    graphics_state.game_pass = sg_make_pass(&pass_description);
 }
 
-static void init(void) {
-    
-    // init memory for tagged heap allocator
-    if(ws_tagged_heap_init() < 0)
-    {
-        // todo(Wynter): handle case where we can't init allocator memory
-    }
-
-    printf("Initialized tagged heap allocator\n");
-    printf("  address: %" PRIxPTR "\n", (uintptr_t) ws_tagged_heap_get_base());
-    printf("  block size: %" PRIxPTR "\n", (uintptr_t) ws_tagged_heap_get_block_size());
-    printf("  allocate 1 block: %" PRIxPTR "\n", (uintptr_t) ws_tagged_heap_alloc_block(32));
-    printf("  allocate 4 blocks: %" PRIxPTR "\n", (uintptr_t) ws_tagged_heap_alloc_n_blocks(32, 4));
-    printf("  allocate 1 blocks: %" PRIxPTR "\n", (uintptr_t) ws_tagged_heap_alloc_block(32));
-
-    graphics_state.app_description.context = sapp_sgcontext();
-    sg_setup(&graphics_state.app_description);
-
-    graphics_state.simgui_description = {0};
-    graphics_state.simgui_description.dpi_scale = sapp_dpi_scale();
-    
-    simgui_setup(&graphics_state.simgui_description);
-    sg_imgui_init(&graphics_state.sg_imgui);
-
-    shader_default = sg_make_shader(default_shader_desc());
-    shader_offscreen = sg_make_shader(default_shader_desc());
-
-    graphics_state.game_view_width = 512;
-    graphics_state.game_view_height = 384;
-    graphics_state.render_target_width = 512;
-    graphics_state.render_target_height = 512;
-    graphics_state.render_target_valid = true;
-    
-    initialize_game_pass();
-
+static void initialize_pipelines()
+{
     graphics_state.game_pipeline = sg_alloc_pipeline();
-    auto& game_pipeline_description = graphics_state.game_pipeline_description;
-
-    game_pipeline_description = {0};
-    game_pipeline_description.shader = shader_offscreen;
-    game_pipeline_description.layout.buffers[0].stride = sizeof(ws_vertex_t);
-    game_pipeline_description.layout.attrs[ATTR_vs_pos].format = SG_VERTEXFORMAT_FLOAT3;
-    game_pipeline_description.layout.attrs[ATTR_vs_color0].format = SG_VERTEXFORMAT_FLOAT4;
-    game_pipeline_description.layout.attrs[ATTR_vs_texcoord0].format = SG_VERTEXFORMAT_FLOAT2;
-    game_pipeline_description.blend.enabled = true;
-    game_pipeline_description.blend.src_factor_rgb = SG_BLENDFACTOR_SRC_ALPHA;
-    game_pipeline_description.blend.dst_factor_rgb = SG_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
-    game_pipeline_description.blend.color_write_mask = SG_COLORMASK_RGB;
-    game_pipeline_description.blend.color_format = SG_PIXELFORMAT_RGBA8;
-    game_pipeline_description.blend.depth_format = SG_PIXELFORMAT_DEPTH;
-    game_pipeline_description.index_type = SG_INDEXTYPE_UINT16;
-    game_pipeline_description.depth_stencil.depth_compare_func = SG_COMPAREFUNC_LESS_EQUAL;
-    game_pipeline_description.depth_stencil.depth_write_enabled = true;
-    game_pipeline_description.rasterizer.cull_mode = SG_CULLMODE_NONE;
-    game_pipeline_description.label = "game";
-
-    sg_init_pipeline(graphics_state.game_pipeline, game_pipeline_description);
-
     graphics_state.editor_pipeline = sg_alloc_pipeline();
-    auto& editor_pipeline_description = graphics_state.editor_pipeline_description;
 
-    editor_pipeline_description = {0};
-    editor_pipeline_description.shader = shader_default;
-    editor_pipeline_description.layout.buffers[0].stride = sizeof(ws_vertex_t);
-    editor_pipeline_description.layout.attrs[ATTR_vs_pos].format = SG_VERTEXFORMAT_FLOAT3;
-    editor_pipeline_description.layout.attrs[ATTR_vs_color0].format = SG_VERTEXFORMAT_FLOAT4;
-    editor_pipeline_description.layout.attrs[ATTR_vs_texcoord0].format = SG_VERTEXFORMAT_FLOAT2;
-    editor_pipeline_description.blend.enabled = true;
-    editor_pipeline_description.blend.src_factor_rgb = SG_BLENDFACTOR_SRC_ALPHA;
-    editor_pipeline_description.blend.dst_factor_rgb = SG_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
-    editor_pipeline_description.blend.color_write_mask = SG_COLORMASK_RGB;
-    editor_pipeline_description.index_type = SG_INDEXTYPE_UINT16;
-    editor_pipeline_description.depth_stencil.depth_compare_func = SG_COMPAREFUNC_LESS_EQUAL;
-    editor_pipeline_description.depth_stencil.depth_write_enabled = true;
-    editor_pipeline_description.rasterizer.cull_mode = SG_CULLMODE_NONE;
-    editor_pipeline_description.label = "editor";
+    sg_pipeline_desc pipeline_desc = {0};
 
-    sg_init_pipeline(graphics_state.editor_pipeline, &editor_pipeline_description);
+    pipeline_desc = {0};
+    pipeline_desc.shader = graphics_state.shader_offscreen;
+    pipeline_desc.layout.buffers[0].stride = sizeof(ws_vertex_t);
+    pipeline_desc.layout.attrs[ATTR_vs_pos].format = SG_VERTEXFORMAT_FLOAT3;
+    pipeline_desc.layout.attrs[ATTR_vs_color0].format = SG_VERTEXFORMAT_FLOAT4;
+    pipeline_desc.layout.attrs[ATTR_vs_texcoord0].format = SG_VERTEXFORMAT_FLOAT2;
+    pipeline_desc.blend.enabled = true;
+    pipeline_desc.blend.src_factor_rgb = SG_BLENDFACTOR_SRC_ALPHA;
+    pipeline_desc.blend.dst_factor_rgb = SG_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+    pipeline_desc.blend.color_write_mask = SG_COLORMASK_RGB;
+    pipeline_desc.blend.color_format = SG_PIXELFORMAT_RGBA8;
+    pipeline_desc.blend.depth_format = SG_PIXELFORMAT_DEPTH;
+    pipeline_desc.index_type = SG_INDEXTYPE_UINT16;
+    pipeline_desc.depth_stencil.depth_compare_func = SG_COMPAREFUNC_LESS_EQUAL;
+    pipeline_desc.depth_stencil.depth_write_enabled = true;
+    pipeline_desc.rasterizer.cull_mode = SG_CULLMODE_NONE;
+    pipeline_desc.label = "game";
 
+    sg_init_pipeline(graphics_state.game_pipeline, &pipeline_desc);
 
+    pipeline_desc.shader = graphics_state.shader_default;
+    pipeline_desc.label = "editor";
+
+    sg_init_pipeline(graphics_state.editor_pipeline, &pipeline_desc);
+}
+
+static void setup_imgui_style()
+{
     ImGuiStyle* style = &ImGui::GetStyle();
 	ImVec4* colors = style->Colors;
 
@@ -229,26 +199,50 @@ static void init(void) {
 	colors[ImGuiCol_DockingPreview]         = ImVec4(1.000f, 0.391f, 0.000f, 0.781f);
 	colors[ImGuiCol_DockingEmptyBg]         = ImVec4(0.180f, 0.180f, 0.180f, 1.000f);
 #endif
+}
+static void init(void) {
+    
+    // init memory for tagged heap allocator
+    if(ws_tagged_heap_init() < 0)
+    {
+        // todo(Wynter): handle case where we can't init allocator memory
+    }
+
+    printf("Initialized tagged heap allocator\n");
+    printf("  address: %" PRIxPTR "\n", (uintptr_t) ws_tagged_heap_get_base());
+    printf("  block size: %" PRIxPTR "\n", (uintptr_t) ws_tagged_heap_get_block_size());
+    printf("  allocate 1 block: %" PRIxPTR "\n", (uintptr_t) ws_tagged_heap_alloc_block(32));
+    printf("  allocate 4 blocks: %" PRIxPTR "\n", (uintptr_t) ws_tagged_heap_alloc_n_blocks(32, 4));
+    printf("  allocate 1 blocks: %" PRIxPTR "\n", (uintptr_t) ws_tagged_heap_alloc_block(32));
+
+    sg_desc app_description = {0};
+    app_description.context = sapp_sgcontext();
+    sg_setup(&app_description);
+
+    simgui_desc_t simgui_description = {0};
+    simgui_description.dpi_scale = sapp_dpi_scale();
+    
+    simgui_setup(&simgui_description);
+    sg_imgui_init(&graphics_state.sg_imgui);
+
+    graphics_state.shader_default = sg_make_shader(default_shader_desc());
+    graphics_state.shader_offscreen = sg_make_shader(default_shader_desc());
+
+    graphics_state.game_view_width = system_settings.screen.width; // 512;
+    graphics_state.game_view_height = system_settings.screen.height; //384;
+    graphics_state.render_target_width = npot(graphics_state.game_view_width);
+    graphics_state.render_target_height = npot(graphics_state.game_view_height);
+    graphics_state.render_target_valid = true;
+    
+    initialize_game_pass();
+    initialize_pipelines();
+
+    setup_imgui_style();
 
     load();
 
     last_tick_time = ws_time_current();
     last_render_time = ws_time_current();
-}
-bool is_pot(uint64_t n)
-{
-    return (!(n & (n - 1)));
-}
-
-uint64_t npot(uint64_t n)
-{
-    n |= n >> 1;
-    n |= n >> 2;
-	n |= n >> 4;
-	n |= n >> 8;
-	n |= n >> 16;
-	n |= n >> 32;
-  return n + 1;
 }
 
 static void frame(void) {
@@ -274,9 +268,8 @@ static void frame(void) {
         printf("Resizing view to %dx%d\n", w, h);
         printf("Resizing framebuffer to %dx%d\n", graphics_state.render_target_width, graphics_state.render_target_height);
 
-        auto& game_pass_description = graphics_state.game_pass_description;
-        sg_image old_render_target = game_pass_description.color_attachments[0].image;
-        sg_image old_depth_buffer = game_pass_description.depth_stencil_attachment.image;
+        sg_image old_render_target = graphics_state.game_render_target;
+        sg_image old_depth_buffer = graphics_state.depth_buffer;
         sg_pass old_pass = graphics_state.game_pass;
 
         initialize_game_pass();
@@ -287,7 +280,7 @@ static void frame(void) {
         graphics_state.render_target_valid = true;
     }
     
-    simgui_new_frame(sapp_width(), sapp_height(), 1.0f/60.0f);
+    simgui_new_frame(sapp_width(), sapp_height(), delta_tick_time);
 #if IMGUI_HAS_DOCK
     
     ImGuiIO& io = ImGui::GetIO();
@@ -421,8 +414,7 @@ static void frame(void) {
             (float)graphics_state.game_view_height / (float)graphics_state.render_target_height
         };
 
-        // ImGui::Image((ImTextureID)(intptr_t)color_img.id, imageRegi ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.25f));
-        ImGui::Image((ImTextureID)(intptr_t)color_img.id, imageRegion, ImVec2(0.0f, 1.0f), ImVec2(view_dims.x, 1.0f - view_dims.y));
+        ImGui::Image((ImTextureID)(intptr_t)graphics_state.game_render_target.id, imageRegion, ImVec2(0.0f, 1.0f), ImVec2(view_dims.x, 1.0f - view_dims.y));
 
         graphics_state.game_view_width = contentRegion.x;
         graphics_state.game_view_height = contentRegion.y;
@@ -460,6 +452,7 @@ sapp_desc sokol_main(int argc, char* argv[]) {
     system_settings.screen.vsync = true;
 
     stm_setup();
+
     sfetch_desc_t fetch_desc{ 0 };
     sfetch_setup(&fetch_desc);
 
@@ -477,8 +470,8 @@ sapp_desc sokol_main(int argc, char* argv[]) {
     start();
 
     sapp_desc description = {0};
-    description.width = system_settings.screen.width;
-    description.height = system_settings.screen.height;
+    description.width = 1280;
+    description.height = 720;
     description.high_dpi = system_settings.screen.hidpi;
     description.window_title = system_settings.screen.title;
     description.init_cb = init;
