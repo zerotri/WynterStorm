@@ -49,31 +49,12 @@ std::vector<uint16_t> index_buffer;
 static double last_tick_time = 0.0;
 static double last_render_time = 0.0;
 
-static void init(void) {
-    
-    // init memory for tagged heap allocator
-    if(ws_tagged_heap_init() < 0)
-    {
-        // todo(Wynter): handle case where we can't init allocator memory
-    }
-
-    printf("Initialized tagged heap allocator\n");
-    printf("  address: %" PRIxPTR "\n", (uintptr_t) ws_tagged_heap_get_base());
-    printf("  block size: %" PRIxPTR "\n", (uintptr_t) ws_tagged_heap_get_block_size());
-
-    graphics_state.app_description.context = sapp_sgcontext();
-    sg_setup(&graphics_state.app_description);
-
-    simgui_setup(&graphics_state.simgui_description);
-    sg_imgui_init(&graphics_state.sg_imgui);
-
-    shader_default = sg_make_shader(default_shader_desc());
-    shader_offscreen = sg_make_shader(default_shader_desc());
-
+static void initialize_game_pass()
+{
     sg_image_desc img_desc = {0};
     img_desc.render_target = true;
-    img_desc.width = 512;
-    img_desc.height = 512;
+    img_desc.width = graphics_state.render_target_width;
+    img_desc.height = graphics_state.render_target_height;
     img_desc.pixel_format = SG_PIXELFORMAT_RGBA8;
     img_desc.min_filter = SG_FILTER_NEAREST;
     img_desc.mag_filter = SG_FILTER_NEAREST;
@@ -89,13 +70,46 @@ static void init(void) {
 
     sg_image depth_img = sg_make_image(&img_desc);
 
-
-    sg_pass_desc game_pass_description = {0};
+    auto &game_pass_description = graphics_state.game_pass_description;
+    game_pass_description = {0};
     game_pass_description.color_attachments[0].image = color_img;
     game_pass_description.depth_stencil_attachment.image = depth_img;
     game_pass_description.label = "game-pass";
 
     graphics_state.game_pass = sg_make_pass(&game_pass_description);
+}
+
+static void init(void) {
+    
+    // init memory for tagged heap allocator
+    if(ws_tagged_heap_init() < 0)
+    {
+        // todo(Wynter): handle case where we can't init allocator memory
+    }
+
+    printf("Initialized tagged heap allocator\n");
+    printf("  address: %" PRIxPTR "\n", (uintptr_t) ws_tagged_heap_get_base());
+    printf("  block size: %" PRIxPTR "\n", (uintptr_t) ws_tagged_heap_get_block_size());
+    printf("  allocate 1 block: %" PRIxPTR "\n", (uintptr_t) ws_tagged_heap_alloc_block(32));
+    printf("  allocate 4 blocks: %" PRIxPTR "\n", (uintptr_t) ws_tagged_heap_alloc_n_blocks(32, 4));
+    printf("  allocate 1 blocks: %" PRIxPTR "\n", (uintptr_t) ws_tagged_heap_alloc_block(32));
+
+    graphics_state.app_description.context = sapp_sgcontext();
+    sg_setup(&graphics_state.app_description);
+
+    simgui_setup(&graphics_state.simgui_description);
+    sg_imgui_init(&graphics_state.sg_imgui);
+
+    shader_default = sg_make_shader(default_shader_desc());
+    shader_offscreen = sg_make_shader(default_shader_desc());
+
+    graphics_state.game_view_width = 512;
+    graphics_state.game_view_height = 384;
+    graphics_state.render_target_width = 512;
+    graphics_state.render_target_height = 512;
+    graphics_state.render_target_valid = true;
+    
+    initialize_game_pass();
 
     graphics_state.game_pipeline = sg_alloc_pipeline();
     auto& game_pipeline_description = graphics_state.game_pipeline_description;
@@ -218,6 +232,21 @@ static void init(void) {
     last_tick_time = ws_time_current();
     last_render_time = ws_time_current();
 }
+bool is_pot(uint64_t n)
+{
+    return (!(n & (n - 1)));
+}
+
+uint64_t npot(uint64_t n)
+{
+    n |= n >> 1;
+    n |= n >> 2;
+	n |= n >> 4;
+	n |= n >> 8;
+	n |= n >> 16;
+	n |= n >> 32;
+  return n + 1;
+}
 
 static void frame(void) {
     sfetch_dowork();
@@ -226,6 +255,34 @@ static void frame(void) {
     double delta_tick_time = current_tick_time - last_tick_time;
     tick(delta_tick_time);
     last_tick_time = current_tick_time;
+
+    // if render target invalidated
+    if(!graphics_state.render_target_valid)
+    {
+        auto &w = graphics_state.game_view_width;
+        auto &h = graphics_state.game_view_height;
+
+        graphics_state.render_target_width = is_pot(w) ? w : npot(w);
+        graphics_state.render_target_height = is_pot(h) ? h : npot(h);
+
+        if(graphics_state.render_target_width < 32) graphics_state.render_target_width = 32;
+        if(graphics_state.render_target_height < 32) graphics_state.render_target_height = 32;
+
+        printf("Resizing view to %dx%d\n", w, h);
+        printf("Resizing framebuffer to %dx%d\n", graphics_state.render_target_width, graphics_state.render_target_height);
+
+        auto& game_pass_description = graphics_state.game_pass_description;
+        sg_image old_render_target = game_pass_description.color_attachments[0].image;
+        sg_image old_depth_buffer = game_pass_description.depth_stencil_attachment.image;
+        sg_pass old_pass = graphics_state.game_pass;
+
+        initialize_game_pass();
+
+        sg_destroy_pass(old_pass);
+        sg_destroy_image(old_render_target);
+        sg_destroy_image(old_depth_buffer);
+        graphics_state.render_target_valid = true;
+    }
     
     simgui_new_frame(sapp_width(), sapp_height(), 1.0f/60.0f);
 #if IMGUI_HAS_DOCK
@@ -264,9 +321,17 @@ static void frame(void) {
     auto &sg_imgui = graphics_state.sg_imgui;
     if (ImGui::BeginMenuBar()) {
         if (ImGui::BeginMenu("File")) {
+            ImGui::MenuItem("New");
+            ImGui::MenuItem("Open");
+            ImGui::MenuItem("Save");
+            ImGui::Separator();
+            ImGui::MenuItem("Export");
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Edit")) {
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Assets")) {
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Build")) {
@@ -323,32 +388,50 @@ static void frame(void) {
     }
 #endif
 
-    int game_view_width = 512;
-    int game_view_height = 384;
-    int game_view_offset_x = sapp_width()/2 - 512/2;
-    int game_view_offset_y = sapp_height()/2 - game_view_height/2;
+    int game_view_offset_x = sapp_width()/2 - graphics_state.game_view_width/2;
+    int game_view_offset_y = sapp_height()/2 - graphics_state.game_view_height/2;
     ImGui::SetNextWindowPos(ImVec2(game_view_offset_x, game_view_offset_y), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(game_view_width, game_view_height), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(graphics_state.game_view_width, graphics_state.game_view_height), ImGuiCond_FirstUseEver);
     ImGui::Begin("Game View", nullptr, ImGuiWindowFlags_NoScrollbar);
 
         // calculate window center and image size (fixed aspect ratio)
         ImVec2 currentCursorPos = ImGui::GetCursorPos();
         ImVec2 contentRegion = ImGui::GetContentRegionAvail();
         ImVec2 imageRegion = ImVec2(0,0);
-        float gameAspectRatio = (float)game_view_width / (float)game_view_height;
+        float gameAspectRatio = (float)graphics_state.game_view_width / (float)graphics_state.game_view_height;
         float windowAspectRatio = contentRegion.x / contentRegion.y;
         if(windowAspectRatio > gameAspectRatio)
         {
-            imageRegion = ImVec2(game_view_width * (contentRegion.y/game_view_height), contentRegion.y);
+            imageRegion = ImVec2(graphics_state.game_view_width * (contentRegion.y/graphics_state.game_view_height), contentRegion.y);
         }
         else
         {
-            imageRegion = ImVec2(contentRegion.x, game_view_height * (contentRegion.x/game_view_width));
+            imageRegion = ImVec2(contentRegion.x, graphics_state.game_view_height * (contentRegion.x/graphics_state.game_view_width));
         }
         ImVec2 cursorPos(currentCursorPos.x + (contentRegion.x - imageRegion.x) * 0.5f, currentCursorPos.y + (contentRegion.y - imageRegion.y) * 0.5f);
-        
+
+
         ImGui::SetCursorPos(cursorPos);
-        ImGui::Image((ImTextureID)(intptr_t)color_img.id, imageRegion, ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.25f));
+
+        ImVec2 view_dims = {
+            (float)graphics_state.game_view_width / (float)graphics_state.render_target_width, 
+            (float)graphics_state.game_view_height / (float)graphics_state.render_target_height
+        };
+
+        // ImGui::Image((ImTextureID)(intptr_t)color_img.id, imageRegi ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.25f));
+        ImGui::Image((ImTextureID)(intptr_t)color_img.id, imageRegion, ImVec2(0.0f, 1.0f), ImVec2(view_dims.x, 1.0f - view_dims.y));
+
+        graphics_state.game_view_width = contentRegion.x;
+        graphics_state.game_view_height = contentRegion.y;
+
+        if( (graphics_state.game_view_width > graphics_state.render_target_width) ||
+            (graphics_state.game_view_width < graphics_state.render_target_width / 2) ||
+            (graphics_state.game_view_height > graphics_state.render_target_height) ||
+            (graphics_state.game_view_height < graphics_state.render_target_height / 2))
+        {
+            graphics_state.render_target_valid = false;
+        }
+        
     ImGui::End();
 
     sg_begin_default_pass(&graphics_state.default_pass, sapp_width(), sapp_height());

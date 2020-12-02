@@ -13,6 +13,11 @@ struct graphics_state_t {
     sg_pass_desc game_pass_description;
     sg_pass_action game_pass_action;
     sg_pass_action default_pass;
+    int game_view_width;
+    int game_view_height;
+    int render_target_width;
+    int render_target_height;
+    bool render_target_valid;
 };
 
 struct ws_vertex_t {
