@@ -1,7 +1,6 @@
 #include <TaggedHeap.h>
 #include <cstring>
 #include <cstdint>
-#include <sys/mman.h>
 #include <stdio.h>
 #include <inttypes.h>
 
@@ -18,6 +17,15 @@
 #define PLATFORM_HAS_MMAP 1
 #define PLATFORM_HAS_VIRTUALALLOC 0
 #endif
+
+#if PLATFORM_HAS_MMAP
+#include <sys/mman.h>
+#endif
+
+#if PLATFORM_HAS_VIRTUALALLOC
+#include <windows.h>
+#endif
+
 
 constexpr uintptr_t tagged_heap_fixed_addr          = 0x200000000;
 constexpr size_t tagged_heap_size                   = 0x00400000;   // 16MB
@@ -45,7 +53,14 @@ int ws_tagged_heap_init()
         return -1;
     }
 #elif PLATFORM_HAS_VIRTUALALLOC == 1
-    #error VirtualAlloc support not yet implemented
+    ws_tagged_heap_ptr = (ws_tagged_heap_t*)VirtualAlloc(0, tagged_heap_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
+    if (ws_tagged_heap_ptr == nullptr)
+    {
+        // todo(Wynter): handle outputting the error here
+        // note: Use GetLastError on Windows
+        return -1;
+    }
 #else
     #error Platform does not support mmap or VirtualAlloc functionality
 #endif
